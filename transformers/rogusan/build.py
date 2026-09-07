@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Monochrome logo sketch -> finished black-ground and white-ground logos.
+"""Monochrome logo sketch -> finished logos (Rogusan / ログさん).
 
 For every image in ``input/`` the pipeline runs:
 
@@ -18,19 +18,26 @@ Each sketch produces two PNGs in ``output/``:
 * ``<name>_on_white.png`` -- black strokes on white
 """
 
+import sys
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
 from logo_tools import center_by_mass, fill_background, fit, luminance_to_alpha
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Keep progress lines printable when source filenames contain non-ASCII
+# characters, whatever the console's native encoding.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Edit these settings for each logo job.
-INPUT_DIR = PROJECT_ROOT / "input"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+INPUT_DIR = SCRIPT_DIR / "input"
+OUTPUT_DIR = SCRIPT_DIR / "output"
 CANVAS_SIZE = 512  # side of the square output, pixels
 OCCUPANCY = 0.82  # fraction of the canvas the artwork's long edge fills
+VERTICAL_OFFSET = 24  # shift artwork down this many pixels (negative = up)
 INVERT = True  # True: dark strokes in the sketch become the opaque mark
 BLACK_POINT = 20  # opacity at/below this goes transparent (drops paper haze)
 WHITE_POINT = 150  # opacity at/above this snaps to a solid stroke
@@ -56,7 +63,9 @@ def render(sketch: Image.Image, *, stroke: str, background: str) -> Image.Image:
         sharpen=SHARPEN,
     )
     fitted = fit(strokes, canvas_size=CANVAS_SIZE, occupancy=OCCUPANCY)
-    placed = center_by_mass(fitted, canvas_size=CANVAS_SIZE)
+    placed = center_by_mass(
+        fitted, canvas_size=CANVAS_SIZE, vertical_offset=VERTICAL_OFFSET
+    )
     return fill_background(placed, color=background)
 
 
@@ -85,7 +94,7 @@ def main() -> None:
                 continue
             destination = OUTPUT_DIR / f"{path.stem}{suffix}.png"
             logo.save(destination, format="PNG")
-            print(f"{path.name} -> {destination.relative_to(PROJECT_ROOT)}")
+            print(f"{path.name} -> {destination.relative_to(SCRIPT_DIR)}")
 
 
 if __name__ == "__main__":

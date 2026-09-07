@@ -275,6 +275,28 @@ class CenterByMassTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             center_by_mass(source, canvas_size=10)
 
+    def test_vertical_offset_shifts_position_down(self) -> None:
+        source = Image.new("RGBA", (2, 2), (255, 255, 255, 255))
+
+        result = center_by_mass(source, canvas_size=10, vertical_offset=2)
+
+        self.assertEqual(result.getchannel("A").getbbox(), (4, 6, 6, 8))
+
+    def test_vertical_offset_still_clamps_at_canvas_edge(self) -> None:
+        source = Image.new("RGBA", (2, 2), (255, 255, 255, 255))
+
+        result = center_by_mass(source, canvas_size=10, vertical_offset=10)
+
+        self.assertEqual(result.getchannel("A").getbbox(), (4, 8, 6, 10))
+
+    def test_rejects_non_finite_vertical_offset(self) -> None:
+        source = Image.new("RGBA", (2, 2), (255, 255, 255, 255))
+
+        with self.assertRaises(ValueError):
+            center_by_mass(source, canvas_size=10, vertical_offset=math.nan)
+        with self.assertRaises(TypeError):
+            center_by_mass(source, canvas_size=10, vertical_offset="0.1")  # type: ignore[arg-type]
+
 
 class FillBackgroundTests(unittest.TestCase):
     def test_composites_transparency_over_solid_color(self) -> None:

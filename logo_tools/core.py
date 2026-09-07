@@ -181,13 +181,24 @@ def center_by_mass(
     image: Image.Image,
     *,
     canvas_size: int = 512,
+    vertical_offset: float = 0.0,
 ) -> Image.Image:
     """Place artwork on a square transparent canvas by visible center of mass.
+
+    ``vertical_offset`` shifts the resting position down by that many pixels
+    (negative moves it up), applied before edge clamping.
 
     The desired position is clamped only when exact mass-centering would clip
     artwork at a canvas edge.
     """
     _validate_canvas_size(canvas_size)
+    if isinstance(vertical_offset, bool) or not isinstance(
+        vertical_offset, (int, float)
+    ):
+        raise TypeError("vertical_offset must be a number")
+    if not math.isfinite(vertical_offset):
+        raise ValueError("vertical_offset must be finite")
+
     artwork = _visible_crop(image)
 
     if artwork.width > canvas_size or artwork.height > canvas_size:
@@ -195,7 +206,7 @@ def center_by_mass(
 
     center_x, center_y = center_of_mass(artwork)
     desired_x = round(canvas_size / 2 - center_x)
-    desired_y = round(canvas_size / 2 - center_y)
+    desired_y = round(canvas_size / 2 - center_y + vertical_offset)
     position = (
         min(max(desired_x, 0), canvas_size - artwork.width),
         min(max(desired_y, 0), canvas_size - artwork.height),

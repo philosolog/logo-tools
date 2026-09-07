@@ -10,9 +10,12 @@ htmlcov/
 build/
 dist/
 .DS_Store
-input/*
-!input/.gitkeep
-output/*
-!output/.gitkeep
 working/*
 !working/.gitkeep
+
+# Each transformer's input/ and output/ folders are kept via .gitkeep, but the
+# source art and generated logos inside them are not tracked.
+transformers/*/input/*
+!transformers/*/input/.gitkeep
+transformers/*/output/*
+!transformers/*/output/.gitkeep
