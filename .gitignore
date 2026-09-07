@@ -11,6 +11,6 @@ build/
 dist/
 .DS_Store
 input/*
-!intput/.gitkeep
+!input/.gitkeep
 output/*
 !output/.gitkeep
