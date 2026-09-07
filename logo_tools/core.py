@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter
 
 type Color = str | Sequence[int]
 
@@ -34,44 +34,95 @@ def _visible_crop(image: Image.Image) -> Image.Image:
 def luminance_to_alpha(
     image: Image.Image,
     *,
-    color: Color = "white",
+    color: Color | None = "white",
     invert: bool = False,
     black_point: int = 0,
+    white_point: int = 255,
+    sharpen: float = 0.0,
 ) -> Image.Image:
-    """Map source luminance to alpha and paint the result a solid color.
+    """Map source luminance to alpha, optionally repainting a solid color.
 
     ``invert=False`` treats white as opaque. With ``invert=True``, black is
-    opaque instead. Values at or below ``black_point`` in the resulting opacity
-    signal become transparent; the remainder is linearly remapped to 0–255.
-    Existing source alpha is multiplied into the computed opacity.
+    opaque instead. In the resulting opacity signal, values at or below
+    ``black_point`` become transparent and values at or above ``white_point``
+    become fully opaque; the band between them is linearly stretched across
+    0–255, so relative differences are preserved while dull greys are pushed
+    toward the nearer extreme. Existing source alpha is multiplied into the
+    computed opacity.
+
+    ``sharpen`` is an unsharp-mask amount in percent (``0`` disables it),
+    applied to the luminance before keying so soft anti-aliased strokes gain
+    crisper edges.
+
+    ``color`` repaints every pixel one solid color. Pass ``color=None`` to keep
+    each pixel's own RGB and replace only the alpha channel.
     """
     if isinstance(black_point, bool) or not isinstance(black_point, int):
         raise TypeError("black_point must be an integer")
-    if not 0 <= black_point < 255:
-        raise ValueError("black_point must be between 0 and 254")
+    if isinstance(white_point, bool) or not isinstance(white_point, int):
+        raise TypeError("white_point must be an integer")
+    if not 0 <= black_point < white_point <= 255:
+        raise ValueError(
+            "points must satisfy 0 <= black_point < white_point <= 255"
+        )
+    if isinstance(sharpen, bool) or not isinstance(sharpen, (int, float)):
+        raise TypeError("sharpen must be a number")
+    if not math.isfinite(sharpen) or sharpen < 0:
+        raise ValueError("sharpen must be a non-negative number")
 
     source = image.convert("RGBA")
     signal = image.convert("L")
+    if sharpen:
+        signal = signal.filter(
+            ImageFilter.UnsharpMask(radius=2, percent=round(sharpen), threshold=0)
+        )
     if invert:
         signal = ImageChops.invert(signal)
 
-    if black_point:
-        denominator = 255 - black_point
+    if black_point or white_point != 255:
+        span = white_point - black_point
         levels = [
             0
             if value <= black_point
-            else round((value - black_point) * 255 / denominator)
+            else 255
+            if value >= white_point
+            else round((value - black_point) * 255 / span)
             for value in range(256)
         ]
         signal = signal.point(levels)
 
     alpha = ImageChops.multiply(signal, source.getchannel("A"))
 
-    # Let Pillow validate named, hexadecimal, and RGB tuple color values.
-    rgb = Image.new("RGB", (1, 1), color).getpixel((0, 0))
-    result = Image.new("RGBA", image.size, (*rgb, 255))
+    if color is None:
+        result = source.copy()
+    else:
+        # Let Pillow validate named, hexadecimal, and RGB tuple color values.
+        rgb = Image.new("RGB", (1, 1), color).getpixel((0, 0))
+        result = Image.new("RGBA", image.size, (*rgb, 255))
     result.putalpha(alpha)
     return result
+
+
+def square_crop(image: Image.Image, *, margin: float = 0.0) -> Image.Image:
+    """Trim to visible artwork and center it on a square transparent canvas.
+
+    The square's edge is the longer trimmed dimension grown by ``margin`` as a
+    fraction of that edge (``margin=0.1`` adds a 10% border). The result is
+    always ``RGBA`` so a later background fill can paint the padding.
+    """
+    if isinstance(margin, bool) or not isinstance(margin, (int, float)):
+        raise TypeError("margin must be a number")
+    if not math.isfinite(margin) or margin < 0:
+        raise ValueError("margin must be a non-negative number")
+
+    artwork = _visible_crop(image).convert("RGBA")
+    edge = round(max(artwork.size) * (1 + margin))
+    frame = Image.new("RGBA", (edge, edge), (0, 0, 0, 0))
+    frame.alpha_composite(
+        artwork,
+        ((edge - artwork.width) // 2, (edge - artwork.height) // 2),
+    )
+    return frame
 
 
 def center_of_mass(image: Image.Image) -> tuple[float, float]:
