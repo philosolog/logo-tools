@@ -2,8 +2,9 @@
 
 For every ``input/*.typ`` the pipeline runs:
 
-1. ``typst compile`` renders the source to ``output/<name>.svg``
-2. ``rsvg-convert`` rasterizes that SVG (transparent ground, white glyph)
+1. ``typst compile`` renders the source to ``output/<name>.svg``, with a
+   preamble that hugs the glyph on a transparent page in white ink
+2. ``typst compile`` renders it again as a PNG, sized from that SVG
 3. ``fit`` / ``center_by_mass`` place it on a square canvas
 4. ``fill_background`` flattens onto black
 5. shrink to ``GRID`` x ``GRID`` cells, then blow back up with nearest-neighbour
@@ -12,6 +13,7 @@ Each source writes ``output/<name>.svg`` and ``output/<name>_pixel.png``.
 """
 
 import io
+import re
 import subprocess
 from pathlib import Path
 
@@ -29,16 +31,37 @@ OCCUPANCY = 0.4  # fraction of the canvas the glyph's long edge fills
 THRESHOLD = 110  # 0-255 cutoff for pure black/white cells; None keeps gray
 
 
-def make_svg(source: Path, destination: Path) -> None:
-    subprocess.run(["typst", "compile", str(source), str(destination)], check=True)
+# Prepended to every source: a page hugging the glyph, transparent ground,
+# white ink. Sources can then be a bare formula like ``$star_M$``. Text edges
+# default to baseline/cap-height, which would clip subscripts and descenders,
+# so measure glyph bounds and leave a margin; ``fit`` crops it away anyway.
+PREAMBLE = """#set page(width: auto, height: auto, margin: 10pt, fill: none)
+#set text(fill: white, top-edge: "bounds", bottom-edge: "bounds")
+"""
 
 
-def rasterize(svg: Path, *, size: int) -> Image.Image:
-    png = subprocess.run(
-        ["rsvg-convert", "--width", str(size * 2), str(svg)],
+def typst(source: Path, destination: Path, *extra: str) -> bytes:
+    """Compile ``source`` (with ``PREAMBLE``) to ``destination``; ``-`` for stdout."""
+    return subprocess.run(
+        ["typst", "compile", *extra, "-", str(destination)],
+        input=(PREAMBLE + source.read_text(encoding="utf-8")).encode(),
+        cwd=source.parent,
         check=True,
         capture_output=True,
     ).stdout
+
+
+def page_size(svg: Path) -> tuple[float, float]:
+    """Width and height of a Typst SVG, in points."""
+    view_box = re.search(r'viewBox="([^"]+)"', svg.read_text()).group(1)
+    _, _, width, height = map(float, view_box.split())
+    return width, height
+
+
+def rasterize(source: Path, svg: Path, *, size: int) -> Image.Image:
+    """Render ``source`` as PNG with its long edge at ``2 * size`` pixels."""
+    ppi = 2 * size * 72 / max(page_size(svg))
+    png = typst(source, Path("-"), "--format", "png", "--ppi", f"{ppi:.2f}")
     return Image.open(io.BytesIO(png)).convert("RGBA")
 
 
@@ -57,8 +80,8 @@ def main() -> None:
 
     for source in sources:
         svg = OUTPUT_DIR / f"{source.stem}.svg"
-        make_svg(source, svg)
-        glyph = rasterize(svg, size=CANVAS_SIZE)
+        typst(source, svg)
+        glyph = rasterize(source, svg, size=CANVAS_SIZE)
         fitted = fit(glyph, canvas_size=CANVAS_SIZE, occupancy=OCCUPANCY)
         placed = center_by_mass(fitted, canvas_size=CANVAS_SIZE)
         logo = pixelate(fill_background(placed, color="black"))
