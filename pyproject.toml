@@ -5,7 +5,7 @@ description = "Small composable image tools for building logo-editing macros"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
 ]
 
 [build-system]
